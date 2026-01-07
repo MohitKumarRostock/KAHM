@@ -147,10 +147,11 @@ def _call_combine_multiple_autoencoders_extended(
     The upstream OTFL helper signature can vary by version. We attempt to pass `n_jobs`
     if available; otherwise we fall back to the 3-argument call.
     """
+    fn: Any = combine_multiple_autoencoders_extended  # `Any` silences Pylance for version-dependent signatures
     try:
-        return combine_multiple_autoencoders_extended(X, AE_list, distance_type, n_jobs=n_jobs)
+        return fn(X, AE_list, distance_type, n_jobs=n_jobs)
     except TypeError:
-        return combine_multiple_autoencoders_extended(X, AE_list, distance_type)
+        return fn(X, AE_list, distance_type)
 
 def l2_normalize_columns(M: np.ndarray, eps: float = 1e-12) -> np.ndarray:
     """L2-normalize columns of a 2D matrix (D, N). Safe for non-directional data when not used."""
@@ -1877,7 +1878,7 @@ if __name__ == "__main__":
     # 2) Refine cluster centers with NLMS (linear-parameter tuning)
     # ------------------------------------------------------------
     # This tunes model['cluster_centers'] while keeping AE gating fixed.
-    # Start with mu in [0.1, 0.5] and keep epsilon small (default 1e-8).
+    # Start with mu in [0.1, 0.5].
     nlms_res = tune_cluster_centers_nlms(
         model,
         X_train,
