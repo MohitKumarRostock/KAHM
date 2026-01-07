@@ -65,6 +65,19 @@ class SoftTuningResult:
     best_mse: float
 
 
+
+
+@dataclass(frozen=True)
+class NLMSCenterTuningResult:
+    """Return type for tune_cluster_centers_nlms."""
+
+    mu: float
+    epsilon: float
+    epochs: int
+    batch_size: int
+    final_mse: float
+    mse_history: Tuple[float, ...]
+
 # ----------------------------
 # Precision helpers
 # ----------------------------
@@ -553,7 +566,8 @@ def train_kahm_regressor(
         "classifier": clf,
         "classifier_dir": classifier_dir_for_model,
         "model_id": model_id_for_model,
-        "cluster_centers": np.asarray(cluster_centers, dtype=_dtype),  # (D_out, C_eff)
+        "cluster_centers_init": cluster_centers.copy(),  # (D_out, C_eff) initial centers
+        "cluster_centers": cluster_centers,  # (D_out, C_eff) tuned/current centers
         "n_clusters": int(n_clusters_eff),
         "input_scale": float(input_scale),
         # soft params (optional; filled by tune_soft_params)
@@ -562,7 +576,6 @@ def train_kahm_regressor(
         "cluster_centers_normalization_requested": cc_req,
         "cluster_centers_normalization": cc_applied,
     }
-
 
 # ----------------------------
 # Soft probability mapping
@@ -1527,6 +1540,199 @@ def tune_soft_params(
                 os.remove(tmp_path)
             except OSError:
                 pass
+def tune_cluster_centers_nlms(
+    model: dict,
+    X: np.ndarray,
+    Y: np.ndarray,
+    *,
+    mu: float = 0.1,
+    epsilon: float | None = None,
+    epochs: int = 1,
+    batch_size: int = 1024,
+    shuffle: bool = True,
+    random_state: int | None = 0,
+    # Soft-mode parameters (None => use model['soft_*'] if set)
+    alpha: Optional[float] = None,
+    topk: Optional[int | None] = None,
+    # Optional anchoring: pull centers toward the initial KMeans centroids
+    anchor_lambda: float = 0.0,
+    # Performance
+    n_jobs: int = -1,
+    preload_classifier: bool = False,
+    verbose: bool = True,
+) -> NLMSCenterTuningResult:
+    """Tune (refine) cluster centers via Normalized LMS (NLMS).
+
+    Model structure
+    ---------------
+    The regressor predicts: Y_hat = C @ p(x),
+    where C is model['cluster_centers'] (D_out, K) and p(x) are soft assignment
+    probabilities computed from AE distances (independent of C).
+
+    This function refines C by minimizing mean-squared error using an online,
+    per-sample (or per-mini-batch) NLMS update:
+
+        C <- C + (mu / (epsilon + ||p||^2)) * (y - C p) p^T
+
+    Parameters
+    ----------
+    mu:
+        Step size. Typical range for NLMS is (0, 1]. Start with 0.1..0.5.
+    epsilon:
+        Small positive constant to prevent division by zero when ||p||^2 is tiny.
+        If None, a dtype-aware default is chosen (good general default: 1e-8).
+    epochs:
+        Number of passes over the dataset.
+    batch_size:
+        Number of samples per mini-batch. NLMS is defined per sample; mini-batching
+        applies the same per-sample normalization but accumulates updates efficiently.
+    anchor_lambda:
+        If > 0, applies a light "pull" toward model['cluster_centers_init'] (if present),
+        which stabilizes tuning when data are noisy.
+
+    Returns
+    -------
+    NLMSCenterTuningResult with MSE history.
+    """
+    X = _as_float_ndarray(X)
+    Y = _as_float_ndarray(Y)
+
+    if X.ndim != 2 or Y.ndim != 2:
+        raise ValueError("X and Y must both be 2D matrices shaped (D, N).")
+    if X.shape[1] != Y.shape[1]:
+        raise ValueError(f"X and Y must have the same number of samples; got X.shape={X.shape}, Y.shape={Y.shape}.")
+
+    C = model.get("cluster_centers", None)
+    if C is None:
+        raise KeyError("model must contain 'cluster_centers' to tune.")
+    C = _as_float_ndarray(C)
+    if C.ndim != 2:
+        raise ValueError(f"model['cluster_centers'] must be 2D; got shape={C.shape}")
+    if C.shape[0] != Y.shape[0]:
+        raise ValueError(
+            f"Output dimension mismatch: model centers have D_out={C.shape[0]} but Y has D_out={Y.shape[0]}."
+        )
+
+    if epochs <= 0:
+        raise ValueError("epochs must be >= 1.")
+    if batch_size <= 0:
+        raise ValueError("batch_size must be >= 1.")
+    mu = float(mu)
+    if not (mu > 0.0):
+        raise ValueError("mu must be > 0.")
+
+    # Choose epsilon: it should be much smaller than typical ||p||^2.
+    # With probability vectors, ||p||^2 is in [1/K, 1]. For K up to 1e5, 1/K = 1e-5.
+    if epsilon is None:
+        epsilon = 1
+    epsilon = float(epsilon)
+    if not (epsilon > 0.0):
+        raise ValueError("epsilon must be > 0.")
+
+    N = X.shape[1]
+    rng = np.random.default_rng(random_state) if random_state is not None else np.random.default_rng()
+
+    # Preserve initial centers for optional anchoring.
+    if "cluster_centers_init" not in model or model.get("cluster_centers_init") is None:
+        model["cluster_centers_init"] = np.asarray(model["cluster_centers"], dtype=np.float64).copy()
+
+    C0 = None
+    if anchor_lambda and anchor_lambda > 0.0:
+        C0 = _as_float_ndarray(model.get("cluster_centers_init")).astype(np.float64, copy=False)
+
+    # Work in float64 for stability; assign back later.
+    orig_dtype = C.dtype
+    C_work = np.asarray(C, dtype=np.float64).copy()
+    model["cluster_centers"] = C_work
+
+    # Optional preload (can be very RAM-heavy when K is large).
+    if preload_classifier:
+        try:
+            preload_kahm_classifier(model, n_jobs=max(1, int(abs(n_jobs) if n_jobs != 0 else 1)))
+        except Exception:
+            # Preload is a performance optimization; proceed without it.
+            pass
+
+    mse_history: list[float] = []
+
+    for ep in range(int(epochs)):
+        idx = np.arange(N)
+        if shuffle:
+            rng.shuffle(idx)
+
+        sse = 0.0
+        count = 0
+
+        for start in range(0, N, int(batch_size)):
+            end = min(N, start + int(batch_size))
+            sel = idx[start:end]
+            Xb = X[:, sel]
+            Yb = Y[:, sel]
+
+            # Compute probabilities p(x) using the model's classifier + soft mapping.
+            # Note: p(x) is independent of the cluster centers, so this is well-defined.
+            Yhat_b, P_b = kahm_regress(
+                model,
+                Xb,
+                n_jobs=int(n_jobs),
+                mode="soft",
+                return_probabilities=True,
+                alpha=alpha,
+                topk=topk,
+                batch_size=None,
+            )
+
+            # Ensure shapes
+            if P_b.ndim != 2 or P_b.shape[1] != (end - start):
+                raise RuntimeError(f"Unexpected probability matrix shape: {P_b.shape}")
+            if Yhat_b.ndim != 2 or Yhat_b.shape != Yb.shape:
+                raise RuntimeError(f"Unexpected prediction shape: {Yhat_b.shape} vs Yb {Yb.shape}")
+
+            E = (Yb - Yhat_b).astype(np.float64, copy=False)  # (D_out, B)
+            P64 = np.asarray(P_b, dtype=np.float64)
+
+            # Per-sample normalization term ||p||^2 (B,)
+            p_norm2 = np.sum(P64 * P64, axis=0)
+            step = mu / (epsilon + (mu*p_norm2))  # (B,)
+
+            # Accumulate update: sum_i step_i * e_i p_i^T
+            E_scaled = E * step[None, :]
+            C_work += E_scaled @ P64.T
+
+            # Optional anchoring toward initial centers
+            if C0 is not None:
+                C_work -= (mu * float(anchor_lambda)) * (C_work - C0)
+
+            # Track MSE on the fly
+            sse += float(np.sum(E * E))
+            count += int(E.size)
+
+        mse = sse / max(1, count)
+        mse_history.append(float(mse))
+
+        if verbose:
+            print(f"[NLMS] epoch {ep+1}/{epochs} | MSE={mse:.6g} | mu={mu:g} | eps={epsilon:g}")
+
+    # If the user requested/auto-applied L2 normalization for targets, preserve it after tuning.
+    if model.get("cluster_centers_normalization") == "l2":
+        norms = np.linalg.norm(C_work, axis=0, keepdims=True)
+        norms = np.maximum(norms, 1e-12)
+        C_work /= norms
+
+    # Restore dtype if needed
+    if orig_dtype != C_work.dtype:
+        model["cluster_centers"] = C_work.astype(orig_dtype, copy=False)
+
+    return NLMSCenterTuningResult(
+        mu=float(mu),
+        epsilon=float(epsilon),
+        epochs=int(epochs),
+        batch_size=int(batch_size),
+        final_mse=float(mse_history[-1] if mse_history else np.nan),
+        mse_history=tuple(mse_history),
+    )
+
+
 def save_kahm_regressor(model: dict, path: str) -> None:
     """Save a KAHM regressor to disk.
 
@@ -1634,28 +1840,8 @@ if __name__ == "__main__":
         random_state=0,
         verbose=True,
         input_scale=0.5,
-        cluster_center_normalization="none"
+        cluster_center_normalization="none",
     )
-
-    # Tune alpha/topk on validation and store into model
-    tune_soft_params(
-        model,
-        X_val,
-        Y_val,
-        alphas=(2.0, 5.0, 8.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 18.0, 20.0, 25.0, 50.0),
-        topks=(2, 5, 10, 11, 12, 13, 14, 15, 20, 25, 50),
-        n_jobs=-1,
-        verbose=True,
-    )
-
-    save_kahm_regressor(model, MODEL_PATH)
-    loaded_model = load_kahm_regressor(MODEL_PATH)
-
-    # Hard prediction
-    Y_pred_hard = kahm_regress(loaded_model, X_test, mode="hard",batch_size=1024)
-
-    # Soft prediction: uses stored (soft_alpha, soft_topk) automatically
-    Y_pred_soft = kahm_regress(loaded_model, X_test, mode="soft", return_probabilities=False,batch_size=1024)
 
     def _mse(yhat: np.ndarray, ytrue: np.ndarray) -> float:
         return float(np.mean((yhat - ytrue) ** 2))
@@ -1665,8 +1851,68 @@ if __name__ == "__main__":
         total_ss = float(np.sum((ytrue - ytrue.mean(axis=1, keepdims=True)) ** 2))
         return 1.0 - residual_ss / total_ss
 
+    # ------------------------------------------------------------
+    # 1) Tune alpha/topk on validation and store into model
+    # ------------------------------------------------------------
+    tune_res = tune_soft_params(
+        model,
+        X_val,
+        Y_val,
+        alphas=(2.0, 5.0, 8.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 18.0, 20.0, 25.0, 50.0),
+        topks=(2, 5, 10, 11, 12, 13, 14, 15, 20, 25, 50, None),
+        n_jobs=-1,
+        verbose=True,
+    )
+
+    # Baseline (before center refinement)
+    Y_val_pred_soft_before = kahm_regress(model, X_val, mode="soft", batch_size=1024)
+    mse_val_before = _mse(Y_val_pred_soft_before, Y_val)
+
+    print(
+        f"\nSoft-params chosen on val: alpha={tune_res.best_alpha}, topk={tune_res.best_topk} | "
+        f"Val MSE (soft, before NLMS centers): {mse_val_before:.6f}"
+    )
+
+    # ------------------------------------------------------------
+    # 2) Refine cluster centers with NLMS (linear-parameter tuning)
+    # ------------------------------------------------------------
+    # This tunes model['cluster_centers'] while keeping AE gating fixed.
+    # Start with mu in [0.1, 0.5] and keep epsilon small (default 1e-8).
+    nlms_res = tune_cluster_centers_nlms(
+        model,
+        X_train,
+        Y_train,
+        mu=0.1,
+        epsilon=1,
+        epochs=2,
+        batch_size=1024,
+        shuffle=True,
+        random_state=0,
+        anchor_lambda=0.0,   # set e.g. 1e-3 to pull gently toward initial KMeans centers
+        n_jobs=-1,
+        preload_classifier=False,
+        verbose=True,
+        alpha = tune_res.best_alpha,
+        topk = tune_res.best_topk
+    )
+
+    Y_val_pred_soft_after = kahm_regress(model, X_val, mode="soft", batch_size=1024)
+    mse_val_after = _mse(Y_val_pred_soft_after, Y_val)
+
+    print(
+        f"NLMS center tuning: final train MSE (reported)={nlms_res.final_mse:.6f} | "
+        f"Val MSE (soft, after NLMS centers): {mse_val_after:.6f}"
+    )
+
+    # Save/load
+    save_kahm_regressor(model, MODEL_PATH)
+    loaded_model = load_kahm_regressor(MODEL_PATH)
+
+    # Hard prediction
+    Y_pred_hard = kahm_regress(loaded_model, X_test, mode="hard", batch_size=1024)
+
+    # Soft prediction: uses stored (soft_alpha, soft_topk) automatically
+    Y_pred_soft = kahm_regress(loaded_model, X_test, mode="soft", return_probabilities=False, batch_size=1024)
     print(f"\nStored soft_alpha={loaded_model.get('soft_alpha')}, soft_topk={loaded_model.get('soft_topk')}")
     print(f"Test MSE (hard): {_mse(Y_pred_hard, Y_test):.6f} | R^2 (hard): {_r2_overall(Y_pred_hard, Y_test):.4f}")
     print(f"Test MSE (soft): {_mse(Y_pred_soft, Y_test):.6f} | R^2 (soft): {_r2_overall(Y_pred_soft, Y_test):.4f}")
-
-
