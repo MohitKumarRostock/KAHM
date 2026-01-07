@@ -1884,7 +1884,7 @@ if __name__ == "__main__":
         Y_train,
         mu=0.1,
         epsilon=1,
-        epochs=2,
+        epochs=10,
         batch_size=1024,
         shuffle=True,
         random_state=0,
