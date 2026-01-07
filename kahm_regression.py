@@ -1707,12 +1707,14 @@ def tune_cluster_centers_nlms(
             # Track MSE on the fly
             sse += float(np.sum(E * E))
             count += int(E.size)
+            if verbose:
+                print(f"[NLMS] count {start}/{N}...")
 
         mse = sse / max(1, count)
         mse_history.append(float(mse))
 
         if verbose:
-            print(f"[NLMS] epoch {ep+1}/{epochs} | MSE={mse:.6g} | mu={mu:g} | eps={epsilon:g}")
+            print(f"[NLMS] batch {ep+1}/{epochs} | MSE={mse:.6g} | mu={mu:g} | eps={epsilon:g}")
 
     # If the user requested/auto-applied L2 normalization for targets, preserve it after tuning.
     if model.get("cluster_centers_normalization") == "l2":
@@ -1837,10 +1839,11 @@ if __name__ == "__main__":
         Y_train,
         n_clusters=1000,
         subspace_dim=20,
-        Nb=50,
+        Nb=100,
         random_state=0,
         verbose=True,
         input_scale=0.5,
+        save_ae_to_disk = False,
         cluster_center_normalization="none",
     )
 
@@ -1860,7 +1863,7 @@ if __name__ == "__main__":
         X_val,
         Y_val,
         alphas=(2.0, 5.0, 8.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 18.0, 20.0, 25.0, 50.0),
-        topks=(2, 5, 10, 11, 12, 13, 14, 15, 20, 25, 50, None),
+        topks=(2, 5, 10, 11, 12, 13, 14, 15, 20, 25, 50, 100, 200, 300, 400, 500),
         n_jobs=-1,
         verbose=True,
     )
@@ -1885,13 +1888,13 @@ if __name__ == "__main__":
         Y_train,
         mu=0.1,
         epsilon=1,
-        epochs=10,
+        epochs=20,
         batch_size=1024,
         shuffle=True,
         random_state=0,
         anchor_lambda=0.0,   # set e.g. 1e-3 to pull gently toward initial KMeans centers
         n_jobs=-1,
-        preload_classifier=False,
+        preload_classifier=True,
         verbose=True,
         alpha = tune_res.best_alpha,
         topk = tune_res.best_topk
