@@ -1,0 +1,13 @@
+# Python caches
+__pycache__/
+kahm_ae_cache/
+
+# MacOS files
+.DS_Store
+
+# Virtual environments
+venv/
+
+# Generated artifacts
+*.joblib
+
