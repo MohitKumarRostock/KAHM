@@ -1708,7 +1708,7 @@ def tune_cluster_centers_nlms(
             sse += float(np.sum(E * E))
             count += int(E.size)
             if verbose:
-                print(f"[NLMS] count {start}/{N}...")
+                print(f"[NLMS] count {end}/{N} | MSE={(sse/max(1, count)):.6g}...")
 
         mse = sse / max(1, count)
         mse_history.append(float(mse))

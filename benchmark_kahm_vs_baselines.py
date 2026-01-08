@@ -65,6 +65,27 @@ from kahm_regression import (
     tune_cluster_centers_nlms,
 )
 
+def l2_normalize_rows(mat: np.ndarray, eps: float = 1e-12, *, inplace: bool = False) -> np.ndarray:
+    """L2-normalize rows of a 2D array.
+
+    Memory behavior:
+      - inplace=False (default): returns a new normalized array (does not mutate the input).
+      - inplace=True: normalizes the provided array in-place (or a writable copy).
+    """
+
+
+    if inplace:
+        out = mat if mat.flags.writeable else mat.copy()
+        norms = np.linalg.norm(out, axis=1, keepdims=True)
+        np.maximum(norms, eps, out=norms)
+        out /= norms
+        return out
+
+    norms = np.linalg.norm(mat, axis=1, keepdims=True)
+    norms = np.maximum(norms, eps)
+    return mat / norms
+
+
 
 # ---------------------------
 # Data generation (example)
@@ -76,7 +97,7 @@ def generate_regime_dataset(
     n_targets: int,
     n_regimes: int,
     *,
-    noise_std: float = 0.05,
+    noise_std: float = 0.0,
     random_state: int = 0,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
@@ -130,7 +151,7 @@ def generate_regime_dataset(
     if noise_std > 0:
         Y += rng.normal(scale=float(noise_std), size=Y.shape).astype(np.float32)
 
-    return X, Y, z
+    return l2_normalize_rows(X), l2_normalize_rows(Y), z
 
 
 # ---------------------------
@@ -297,10 +318,10 @@ def main() -> None:
     p.add_argument("--seed", type=int, default=0)
 
     # Dataset
-    p.add_argument("--n-samples", type=int, default=20000)
+    p.add_argument("--n-samples", type=int, default=10000)
     p.add_argument("--n-features", type=int, default=50)
     p.add_argument("--n-targets", type=int, default=50)
-    p.add_argument("--n-regimes", type=int, default=50)
+    p.add_argument("--n-regimes", type=int, default=100)
     p.add_argument("--noise-std", type=float, default=0.05)
 
     # KAHM params (kept modest by default)
@@ -313,8 +334,8 @@ def main() -> None:
     p.add_argument("--kahm-batch-size", type=int, default=1024)
 
     # Soft tuning grid (small but meaningful)
-    p.add_argument("--alpha-grid", type=str, default="2.0, 5.0, 8.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 18.0, 20.0, 25.0, 50.0")
-    p.add_argument("--topk-grid", type=str, default="2, 5, 10, 11, 12, 13, 14, 15, 20, 25, 50, 100, 200, 300, 400, 500")
+    p.add_argument("--alpha-grid", type=str, default="2.0, 5.0, 8.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0")
+    p.add_argument("--topk-grid", type=str, default="2, 5, 8, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 25, 50, 100, 125, 150, 175, 200")
 
     # Optional KAHM NLMS tuning
     p.add_argument("--do-nlms-centers", type=bool, default=True)
