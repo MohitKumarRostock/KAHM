@@ -1573,7 +1573,7 @@ def tune_cluster_centers_nlms(
     This function refines C by minimizing mean-squared error using an online,
     per-sample (or per-mini-batch) NLMS update:
 
-        C <- C + (mu / (epsilon + ||p||^2)) * (y - C p) p^T
+        C <- C + (mu / (epsilon + mu*||p||^2)) * (y - C p) p^T
 
     Parameters
     ----------
