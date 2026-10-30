@@ -1,0 +1,31 @@
+cff-version: 1.2.0
+message: >-
+  Cite the original KAHM method below. For software experiments, also record
+  the repository URL, version, and exact commit used.
+type: software
+title: "KAHM: Kernel Affine Hull Machines"
+version: 0.1.0
+date-released: '2026-10-30'
+url: 'https://github.com/MohitKumarRostock/KAHM'
+repository-code: 'https://github.com/MohitKumarRostock/KAHM'
+authors:
+  - family-names: Kumar
+    given-names: Mohit
+    orcid: 'https://orcid.org/0000-0002-7368-5157'
+preferred-citation:
+  type: article
+  title: 'On Mitigating the Utility-Loss in Differentially Private Learning: A New Perspective by a Geometrically Inspired Kernel Approach'
+  authors:
+    - family-names: Kumar
+      given-names: Mohit
+    - family-names: Moser
+      given-names: Bernhard A.
+    - family-names: Fischer
+      given-names: Lukas
+  journal: Journal of Artificial Intelligence Research
+  volume: 79
+  start: 515
+  end: 567
+  year: 2024
+  doi: 10.1613/jair.1.15071
+  url: 'https://jair.org/index.php/jair/article/view/15071'

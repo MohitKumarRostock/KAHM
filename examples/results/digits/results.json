@@ -1,0 +1,788 @@
+{
+  "protocol_id": "digits-classification-v1",
+  "protocol_sha256": "3f4196817afe607078cd8c679a1a3976eccc8232719f293adb79f71f728704db",
+  "started_at_utc": "2026-10-30T20:24:07.589034+00:00",
+  "seed": 42,
+  "dataset": {
+    "name": "sklearn.datasets.load_digits",
+    "n_samples": 1797,
+    "n_features": 64,
+    "n_classes": 10,
+    "sha256": "f6d9e39f37dc45d327f6db33428ee58970ccceabb2535a5c179de35886b70443"
+  },
+  "split": {
+    "n_development": 1347,
+    "n_test": 450,
+    "cv_folds": 3
+  },
+  "source_provenance": {
+    "sha256": {
+      "autoencoder.py": "29d5d2e2bea1d207e00fe81a59d43092318b55ca72062838c929ecfd76f57997",
+      "autoencoder_filtering_extended.py": "41b2a70e635d2d25f4b4f51aee1148a37ae1adfb163a8656d862933f69733253",
+      "combine_multiple_autoencoders_extended.py": "f04539f5bbf1f6551c06c37745951a5e1cf6b0a94d1be544b490d3191cc4d851",
+      "dim_reduce.py": "c3048e233bfe902aa8e21ee49a448ec54ed2c0c0a8b24f69d6f217f294991f76",
+      "distance_matrix.py": "ab1c9ee704cc7fd6992a9164f4cd580185d4b61f49ebab635baa471950c7c2df",
+      "examples/classification.py": "0ceee22bb58d4cfb0ffb956bd58f9244ca09a92e24e3e7b30118de024c2aa3c1",
+      "kahm/__init__.py": "e0b0ce87bcf560906d3f4376fe42d0231f9d5da99ab007e891a1fc5ac55e8101",
+      "kahm/classifier.py": "eba842946b24f89b24cec0514a778ea1c927745fca7b45e012b0de1d0ed0e691",
+      "kahm_classification.py": "19cac5d81823ace72643b7df14255fd13b4ac5e82fe0fca9b59cb73b83c7121f",
+      "kernel_regularized_least_squares.py": "566433afa74cf8e8c4798e3c5cec23ea0d1f2acee4b77546317aa5cbd2df59bf",
+      "kxa_matrix.py": "142459ba8aeb7cae3b8bf68c466cebe95f40c924d0c418e03191656ea6803517",
+      "kxx_matrix.py": "1053d0cc440ff2dd335e50f517f884676a818dc9042514968d681885a0b8e8e2",
+      "parallel_autoencoders.py": "a4ee043c75488d3c2bc04a2e63412f0defd0b07f53d7160f7c0136c61a956526"
+    },
+    "git_commit": "33f008c301c7cfca2d20e017b54383d822b5cf58",
+    "working_tree_dirty": true
+  },
+  "methods": [
+    {
+      "method": "KAHM",
+      "candidate_count": 6,
+      "status": "ok",
+      "warnings": [],
+      "search_refit_seconds": 1.0488088019992574,
+      "selected_parameters": {
+        "model__subspace_dim": 16,
+        "scale": "MinMaxScaler(-1,1; clip=False)"
+      },
+      "best_cv_balanced_accuracy": 0.986697408871322,
+      "best_candidate_index": 5,
+      "failed_candidate_indices": [],
+      "test_predict_seconds": 0.041574650997063145,
+      "test_metrics": {
+        "accuracy": 0.9822222222222222,
+        "balanced_accuracy": 0.9820616171829519,
+        "macro_f1": 0.9820836879773911
+      },
+      "confusion_matrix": [
+        [
+          44,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          46,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          43,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          46,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          45,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          44,
+          0,
+          0,
+          0,
+          2
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          45,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          45,
+          0,
+          0
+        ],
+        [
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          41,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          1,
+          43
+        ]
+      ],
+      "model_stats": {
+        "local_models": 20,
+        "reference_samples": 1347
+      }
+    },
+    {
+      "method": "Logistic regression",
+      "candidate_count": 6,
+      "status": "ok",
+      "warnings": [],
+      "search_refit_seconds": 0.9228769219989772,
+      "selected_parameters": {
+        "model__C": 1.0,
+        "scale": "MinMaxScaler(-1,1; clip=False)"
+      },
+      "best_cv_balanced_accuracy": 0.9553416197703357,
+      "best_candidate_index": 4,
+      "failed_candidate_indices": [],
+      "test_predict_seconds": 0.002424687998427544,
+      "test_metrics": {
+        "accuracy": 0.9711111111111111,
+        "balanced_accuracy": 0.9710908886641951,
+        "macro_f1": 0.9710173884583219
+      },
+      "confusion_matrix": [
+        [
+          44,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          42,
+          0,
+          1,
+          0,
+          0,
+          1,
+          0,
+          2,
+          0
+        ],
+        [
+          0,
+          0,
+          44,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          46,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          45,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          44,
+          0,
+          0,
+          0,
+          2
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          44,
+          0,
+          1,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          45,
+          0,
+          0
+        ],
+        [
+          0,
+          3,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          40,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          43
+        ]
+      ]
+    },
+    {
+      "method": "RBF SVM",
+      "candidate_count": 6,
+      "status": "ok",
+      "warnings": [],
+      "search_refit_seconds": 1.3044622899979004,
+      "selected_parameters": {
+        "model__C": 10.0,
+        "scale": "MinMaxScaler(-1,1; clip=False)"
+      },
+      "best_cv_balanced_accuracy": 0.9874052115356463,
+      "best_candidate_index": 4,
+      "failed_candidate_indices": [],
+      "test_predict_seconds": 0.029507382998417597,
+      "test_metrics": {
+        "accuracy": 0.9911111111111112,
+        "balanced_accuracy": 0.9909527019436017,
+        "macro_f1": 0.9910713636245552
+      },
+      "confusion_matrix": [
+        [
+          45,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          46,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          44,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          46,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          45,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          45,
+          0,
+          0,
+          0,
+          1
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          45,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          45,
+          0,
+          0
+        ],
+        [
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          41,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          44
+        ]
+      ]
+    },
+    {
+      "method": "k-nearest neighbors",
+      "candidate_count": 6,
+      "status": "ok",
+      "warnings": [],
+      "search_refit_seconds": 0.28418780200445326,
+      "selected_parameters": {
+        "model__n_neighbors": 1,
+        "scale": "MinMaxScaler(-1,1; clip=False)"
+      },
+      "best_cv_balanced_accuracy": 0.9793038575849495,
+      "best_candidate_index": 3,
+      "failed_candidate_indices": [],
+      "test_predict_seconds": 0.01597054800367914,
+      "test_metrics": {
+        "accuracy": 0.9844444444444445,
+        "balanced_accuracy": 0.9840793169306818,
+        "macro_f1": 0.9841741513457553
+      },
+      "confusion_matrix": [
+        [
+          45,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          46,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          44,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          46,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          45,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          45,
+          0,
+          0,
+          0,
+          1
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          45,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          45,
+          0,
+          0
+        ],
+        [
+          0,
+          3,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          39,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          1,
+          43
+        ]
+      ]
+    },
+    {
+      "method": "Dummy (most frequent)",
+      "candidate_count": 1,
+      "status": "ok",
+      "warnings": [],
+      "search_refit_seconds": 0.014901907998137176,
+      "selected_parameters": {},
+      "best_cv_balanced_accuracy": 0.10000000000000002,
+      "best_candidate_index": 0,
+      "failed_candidate_indices": [],
+      "test_predict_seconds": 0.0001879880001069978,
+      "test_metrics": {
+        "accuracy": 0.10222222222222223,
+        "balanced_accuracy": 0.1,
+        "macro_f1": 0.018548387096774192
+      },
+      "confusion_matrix": [
+        [
+          0,
+          0,
+          0,
+          45,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          46,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          44,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          46,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          45,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          46,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          45,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          45,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          43,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          45,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      ]
+    }
+  ],
+  "complete": true,
+  "environment": {
+    "python": "3.12.14",
+    "platform": "Linux-6.18.57-x86_64-with-glibc2.39",
+    "machine": "x86_64",
+    "logical_cpus": 9,
+    "numpy": "2.3.5",
+    "scipy": "1.17.0",
+    "scikit_learn": "1.8.0",
+    "joblib": "1.5.3",
+    "kahm": "0.1.0",
+    "search_n_jobs": 1,
+    "numerical_thread_limit": 1,
+    "threadpools_during_evaluation": [
+      {
+        "internal_api": "openblas",
+        "prefix": "libscipy_openblas",
+        "version": "0.3.30",
+        "num_threads": 1,
+        "architecture": "SkylakeX"
+      },
+      {
+        "internal_api": "openblas",
+        "prefix": "libscipy_openblas",
+        "version": "0.3.30",
+        "num_threads": 1,
+        "architecture": "SkylakeX"
+      },
+      {
+        "internal_api": "openmp",
+        "prefix": "libgomp",
+        "version": null,
+        "num_threads": 1,
+        "architecture": null
+      }
+    ]
+  },
+  "finished_at_utc": "2026-10-30T20:24:11.320533+00:00"
+}

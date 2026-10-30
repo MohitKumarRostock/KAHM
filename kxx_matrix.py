@@ -27,19 +27,23 @@ def kxx_matrix(x_matrix, weights_matrix, kerneltype="gaussian"):
         X = np.asarray(x_matrix, dtype=float)      # shape (n, N)
         W = np.asarray(weights_matrix, dtype=float)
 
+        if X.ndim != 2 or X.shape[0] == 0 or W.shape != (X.shape[0], X.shape[0]):
+            raise ValueError("Expected X with shape (n, N), n > 0, and weights with shape (n, n).")
         n, N = X.shape
-        Kxx = np.zeros((N, N), dtype=float)
+        Kxx = np.empty((N, N), dtype=float)
 
-        # Double loop as in the MATLAB code
-        for i in range(N - 1):
-            for j in range(i + 1, N):
-                delta = X[:, i] - X[:, j]         # shape (n,)
-                val = delta.T @ W @ delta        # scalar
-                Kxx[i, j] = val
-                Kxx[j, i] = val
-
-        Kxx = np.exp(-(0.5 / n) * Kxx)
-
+        # Same delta.T @ W @ delta equation as the original pair loops. Chunking
+        # removes the Python loop over individual pairs without allocating an
+        # n-by-N-by-N temporary or subtracting large squared norms.
+        chunk_size = max(1, min(N, (8 * 1024 * 1024) // max(8 * n * N, 1)))
+        for start in range(0, N, chunk_size):
+            end = min(start + chunk_size, N)
+            delta = X[:, start:end, None] - X[:, None, :]
+            Kxx[start:end] = np.einsum("ibj,ik,kbj->bj", delta, W, delta, optimize=True)
+        np.maximum(Kxx, 0.0, out=Kxx)
+        np.fill_diagonal(Kxx, 0.0)
+        Kxx *= -(0.5 / n)
+        np.exp(Kxx, out=Kxx)
         return Kxx
 
     else:
