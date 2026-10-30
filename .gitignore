@@ -7,7 +7,16 @@ kahm_ae_cache/
 
 # Virtual environments
 venv/
+.venv/
+.venv-*/
 
 # Generated artifacts
 *.joblib
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+runs/
 

@@ -28,7 +28,9 @@ def parallel_autoencoders(
         Target subspace dimension passed to each autoencoder.
     Nb : int
         Block size parameter used to determine number of clusters.
-        Roughly N_clusters ≈ round(N / Nb).
+        Roughly N_clusters ≈ round(N / Nb), capped to keep at least two
+        references in every block. Blocks are consecutive input columns;
+        this function does not perform k-means clustering.
     n_jobs : int, optional
         Number of parallel jobs (CPU cores) over clusters.
         1  -> no parallelism (serial, current behaviour)
@@ -42,14 +44,16 @@ def parallel_autoencoders(
         List of AE objects (dicts if using the previous autoencoder() implementation).
     """
     y_data = np.ascontiguousarray(y_data, dtype=np.float32)
+    if y_data.ndim != 2 or y_data.shape[0] == 0 or y_data.shape[1] < 2:
+        raise ValueError("y_data must have shape (features, samples) with at least two samples.")
     D, N = y_data.shape  # noqa: F841 (D is not used but kept for clarity)
 
-    if Nb <= 0:
-        raise ValueError("Nb must be positive.")
+    if isinstance(Nb, (bool, np.bool_)) or not isinstance(Nb, (int, np.integer)) or Nb < 2:
+        raise ValueError("Nb must be an integer of at least two.")
 
     # N_clusters = round(N / Nb);  (MATLAB round: half up)
     N_clusters = int(np.floor(N / Nb + 0.5))
-    N_clusters = max(1, N_clusters)
+    N_clusters = min(max(1, N_clusters), N // 2)
 
     if verbose:
         print(f"parallel_autoencoders: N={N}, Nb={Nb} -> N_clusters={N_clusters}")

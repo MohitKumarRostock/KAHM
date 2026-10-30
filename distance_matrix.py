@@ -33,4 +33,7 @@ def distance_matrix(A, B):
     B_sq = np.sum(B**2, axis=1, keepdims=True).T      # (1, numB)
     distMat = A_sq + B_sq - 2 * (A @ B.T)             # (numA, numB)
 
+    # Cancellation in the norm expansion can produce tiny negative squared
+    # distances. These must not turn Gaussian kernel values into numbers > 1.
+    np.maximum(distMat, 0.0, out=distMat)
     return distMat

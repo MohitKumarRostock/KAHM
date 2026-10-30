@@ -7,22 +7,26 @@ Core idea
 ---------
 - Train one (or a small list of) OTFL autoencoder(s) per class using inputs from that class.
 - At inference time, evaluate each class-AE on a new sample to obtain a distance value.
-  Distances are assumed to lie in [0, 1] and be monotone with (1 - probability).
+  Distances lie in [0, 1]; smaller values indicate a closer geometric match.
 
-Soft probability mapping (recommended for calibrated probabilities)
-------------------------------------------------------------------
+Normalized affinity scores (not automatically calibrated probabilities)
+-----------------------------------------------------------------------
 Given distances D of shape (C, N):
 
     S = (1 - D) ** alpha
     keep only top-k scores per sample (optional)
     P = S / sum_c S
 
+The implementation evaluates this ratio in log space. These normalized scores
+are not guaranteed to be calibrated probabilities; validation-based tuning of
+alpha is not by itself a calibration guarantee.
+
 Prediction:
     y_hat = argmax_c P[c, :]
 
 Important note:
 - For strictly monotone transforms (alpha > 0), argmax P is the same as argmin D.
-  Therefore alpha/topk primarily affect probability calibration and cross-entropy,
+  Therefore alpha/topk primarily affect the normalized scores and cross-entropy,
   not the predicted class (except for degenerate ties).
 
 Autotuning support
@@ -203,6 +207,8 @@ def _get_soft_params_from_model(
             topk_from_model = True
 
     alpha_resolved = float(alpha) if alpha is not None else 10.0
+    if not np.isfinite(alpha_resolved) or alpha_resolved <= 0:
+        raise ValueError("alpha must be finite and strictly positive.")
 
     if topk is None and not topk_from_model:
         topk_resolved: int | None = 10
@@ -210,6 +216,46 @@ def _get_soft_params_from_model(
         topk_resolved = topk
 
     return alpha_resolved, topk_resolved
+
+
+def _normalized_affinity_scores(
+    distances: np.ndarray,
+    alpha: float,
+    topk: int | None,
+    *,
+    out: np.ndarray | None = None,
+) -> np.ndarray:
+    """Normalize ``(1 - distance)**alpha`` without underflowing whole columns.
+
+    Used by prediction and validation tuning so both evaluate the same mapping.
+    Scores are uniform only when every clipped raw affinity in a column is zero.
+    These normalized scores are not automatically calibrated probabilities.
+    """
+    distances = np.asarray(distances)
+    if distances.ndim != 2 or distances.shape[0] == 0 or not np.isfinite(distances).all():
+        raise ValueError("Distances must be a finite matrix with at least one class.")
+    alpha = float(alpha)
+    if not np.isfinite(alpha) or alpha <= 0:
+        raise ValueError("alpha must be finite and strictly positive.")
+    scores = np.empty(distances.shape, dtype=np.float64) if out is None else out
+    np.subtract(1.0, distances, out=scores)
+    np.clip(scores, 0.0, 1.0, out=scores)
+    positive = scores > 0
+    np.log(scores, out=scores, where=positive)
+    scores[~positive] = -np.inf
+    scores *= alpha
+    maximum = np.max(scores, axis=0, keepdims=True)
+    finite_columns = np.isfinite(maximum[0])
+    scores[:, finite_columns] -= maximum[:, finite_columns]
+    np.exp(scores, out=scores)
+    if topk is not None and 0 < int(topk) < scores.shape[0]:
+        _topk_truncate_inplace(scores, int(topk))
+    denominator = scores.sum(axis=0)
+    zero_columns = denominator == 0
+    denominator[zero_columns] = 1.0
+    scores /= denominator[None, :]
+    scores[:, zero_columns] = 1.0 / scores.shape[0]
+    return scores
 
 
 # ----------------------------
@@ -360,8 +406,8 @@ def train_kahm_classifier(
     y_idx_clf = y_idx
     if max_train_per_class is not None:
         m = int(max_train_per_class)
-        if m <= 0:
-            raise ValueError("max_train_per_class must be a positive integer or None.")
+        if m < 2:
+            raise ValueError("max_train_per_class must be at least two or None.")
         if verbose:
             print(f"Subsampling AE training data: max_train_per_class={m}")
 
@@ -839,76 +885,7 @@ def kahm_classify(
     classes_arr = np.asarray(classes, dtype=object).reshape(-1)
     y_pred = classes_arr[best_idx]
 
-    alpha_resolved, topk_resolved = _get_soft_params_from_model(model, alpha, topk)
-    if topk_resolved is not None and int(topk_resolved) <= 0:
-        topk_resolved = None
-
-    # Distance computation (optionally batched)
-    # Note: Return probabilities implies holding P (C,N) anyway, so D is usually acceptable in float32.
-    D = np.empty((C_eff, N_new), dtype=np.float32)
-    bs = int(batch_size) if (batch_size is not None and int(batch_size) > 0) else None
-
-    pbar = _maybe_tqdm_total(C_eff * N_new, desc="KAHM: distance eval", unit="sample")
-    try:
-        for c, AE_ref in enumerate(model.get("classifier", AE_arr)):
-            AE_c, from_disk = _load_ae_maybe(AE_ref, class_idx=c)
-            try:
-                if bs is None:
-                    d = _call_combine_multiple_autoencoders_extended(X_new, _ae_as_list(AE_c), distance_type, n_jobs=n_jobs)
-                    d = np.asarray(d, dtype=np.float32).reshape(-1)
-                    if d.size != N_new:
-                        raise ValueError(f"Distance vector from class {c + 1} has shape {d.shape}; expected ({N_new},).")
-                    D[c, :] = d
-                    if pbar is not None:
-                        pbar.update(N_new)
-                else:
-                    for start in range(0, N_new, bs):
-                        end = min(start + bs, N_new)
-                        X_batch = X_new[:, start:end]
-                        d = _call_combine_multiple_autoencoders_extended(X_batch, _ae_as_list(AE_c), distance_type, n_jobs=n_jobs)
-                        d = np.asarray(d, dtype=np.float32).reshape(-1)
-                        if d.size != (end - start):
-                            raise ValueError(
-                                f"Distance vector from class {c + 1} has shape {d.shape}; expected ({end-start},)."
-                            )
-                        D[c, start:end] = d
-                        if pbar is not None:
-                            pbar.update(end - start)
-            finally:
-                if from_disk:
-                    del AE_c
-                    _gc.collect()
-    finally:
-        if pbar is not None:
-            pbar.close()
-
-    # Hard predictions from D (argmin)
-    best_idx = np.argmin(D, axis=0).astype(np.int64, copy=False)
-    classes_arr = np.asarray(classes, dtype=object).reshape(-1)
-    y_pred = classes_arr[best_idx]
-
-
-    # Soft probabilities
-    w = (1.0 - D.astype(np.float64, copy=False))
-    np.clip(w, 0.0, 1.0, out=w)
-    a_f = float(alpha_resolved)
-    if a_f != 1.0:
-        np.power(w, a_f, out=w)
-
-    if topk_resolved is not None:
-        kk = int(topk_resolved)
-        if 0 < kk < C_eff:
-            _topk_truncate_inplace(w, kk)
-
-    denom = w.sum(axis=0, dtype=np.float64)
-    zero_cols = denom <= 1e-12
-    denom = np.where(zero_cols, 1.0, denom)
-    w /= denom[None, :]
-
-    if np.any(zero_cols):
-        w[:, zero_cols] = 1.0 / C_eff
-
-    P = w.astype(out_dtype, copy=False)
+    P = _normalized_affinity_scores(D, alpha_resolved, topk_resolved).astype(out_dtype, copy=False)
 
     if return_probabilities:
         return y_pred, P
@@ -1103,7 +1080,6 @@ def tune_soft_params_ce(
             print(f"Evaluation batch size: {bs} (streaming)")
 
         work = np.empty((C_eff, bs), dtype=np.float64)
-        denom = np.empty((bs,), dtype=np.float64)
 
         best_ce = np.inf
         best_alpha = None
@@ -1113,9 +1089,6 @@ def tune_soft_params_ce(
         ls = float(label_smoothing)
         if not (0.0 <= ls < 1.0):
             raise ValueError("label_smoothing must be in [0, 1).")
-
-        one = 1.0
-        zero = 0.0
 
         for a in alphas:
             a_f = float(a)
@@ -1128,27 +1101,9 @@ def tune_soft_params_ce(
                     end_col = min(N_val, start_col + bs)
                     B = end_col - start_col
 
-                    w = work[:, :B]
-                    # w = (1 - D) ** alpha
-                    np.subtract(one, D_val_mat[:, start_col:end_col], out=w)
-                    np.clip(w, zero, one, out=w)
-                    if a_f != 1.0:
-                        np.power(w, a_f, out=w)
-
-                    # top-k truncation
-                    if k is not None:
-                        kk = int(k)
-                        if kk <= 0:
-                            kk = None
-                        if kk is not None and 0 < kk < C_eff:
-                            _topk_truncate_inplace(w, kk)
-
-                    # denom and p_true
-                    dcol = denom[:B]
-                    dcol[:] = w.sum(axis=0, dtype=np.float64)
-                    zero_cols = dcol <= eps
-                    if np.any(zero_cols):
-                        dcol[zero_cols] = one
+                    w = _normalized_affinity_scores(
+                        D_val_mat[:, start_col:end_col], a_f, k, out=work[:, :B]
+                    )
 
                     # predicted class for accuracy (argmax w)
                     pred = np.argmax(w, axis=0).astype(np.int64, copy=False)
@@ -1156,11 +1111,8 @@ def tune_soft_params_ce(
                     total_correct += int(np.sum(pred == yi))
                     total_count += int(B)
 
-                    # Normalize in-place only if needed for label smoothing; otherwise compute p_true as num/den.
+                    # Evaluate the same normalized scores returned at inference.
                     if ls > 0.0:
-                        np.divide(w, dcol, out=w)
-                        if np.any(zero_cols):
-                            w[:, zero_cols] = 1.0 / C_eff
                         p_true = w[yi, np.arange(B)]
                         p_true = np.maximum(p_true, eps)
                         log_p_true = np.log(p_true)
@@ -1170,8 +1122,7 @@ def tune_soft_params_ce(
                         mean_log = log_w.mean(axis=0)
                         loss_b = -((1.0 - ls) * log_p_true + ls * mean_log)
                     else:
-                        num = w[yi, np.arange(B)]
-                        p_true = num / dcol
+                        p_true = w[yi, np.arange(B)]
                         p_true = np.maximum(p_true, eps)
                         loss_b = -np.log(p_true)
 

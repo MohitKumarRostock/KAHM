@@ -2,7 +2,7 @@ import numpy as np
 from distance_matrix import distance_matrix  # Python version of DistanceMatrix.m
 
 
-def kxa_matrix(x_matrix, a_matrix, sqrt_weights_matrix, kerneltype="gaussian"):
+def kxa_matrix(x_matrix, a_matrix, sqrt_weights_matrix, kerneltype="gaussian", *, row_shift=False):
     """
     Python version of:
         function [Kxa] = KxaMatrix(x_matrix, a_matrix, sqrt_weights_matrix, kerneltype)
@@ -17,6 +17,10 @@ def kxa_matrix(x_matrix, a_matrix, sqrt_weights_matrix, kerneltype="gaussian"):
         Square root of the weight (precision) matrix.
     kerneltype : str, optional
         Kernel type, currently only 'gaussian' supported.
+    row_shift : bool, optional
+        If True, subtract each row's largest log-kernel value before taking
+        exponentials. Use only where a later row normalization cancels this
+        common factor. The default returns the original Gaussian kernel.
 
     Returns
     -------
@@ -30,7 +34,11 @@ def kxa_matrix(x_matrix, a_matrix, sqrt_weights_matrix, kerneltype="gaussian"):
         A = np.asarray(a_matrix, dtype=float)
         S = np.asarray(sqrt_weights_matrix, dtype=float)
 
+        if X.ndim != 2 or A.ndim != 2 or X.shape[0] == 0 or X.shape[0] != A.shape[0]:
+            raise ValueError("Queries and references must have the same positive feature dimension.")
         n, _ = X.shape
+        if S.shape != (n, n) or A.shape[1] == 0:
+            raise ValueError("Expected an n-by-n precision square root and nonempty references.")
 
         # Wx = sqrt_weights_matrix * x_matrix
         # Wa = sqrt_weights_matrix * a_matrix
@@ -41,7 +49,12 @@ def kxa_matrix(x_matrix, a_matrix, sqrt_weights_matrix, kerneltype="gaussian"):
         dist_mat = distance_matrix(Wx.T, Wa.T)
 
         # Kxa = exp(-(0.5/n) * distMat);
-        Kxa = np.exp(-(0.5 / n) * dist_mat)
+        log_kernel = -(0.5 / n) * dist_mat
+        if row_shift:
+            if not np.isfinite(log_kernel).all():
+                raise FloatingPointError("Nonfinite kernel distances; rescale the input features.")
+            log_kernel -= log_kernel.max(axis=1, keepdims=True)
+        Kxa = np.exp(log_kernel)
 
         return Kxa
 

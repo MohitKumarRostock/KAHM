@@ -1,0 +1,117 @@
+name: Test and release
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Python ${{ matrix.python }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: '3.10'
+          - os: ubuntu-latest
+            python: '3.12'
+          - os: windows-latest
+            python: '3.12'
+    env:
+      OMP_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install package and test dependencies
+        run: python -m pip install ".[dev,examples]"
+      - name: Test numerical behavior, estimator integration, and protocol
+        run: python -m pytest -q
+
+  release:
+    name: Build and publish a new research version
+    needs: tests
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: kahm-release
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+      OMP_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Read version and check whether it is already released
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build wheel and source distribution
+        if: steps.version.outputs.exists == 'false'
+        run: |
+          python -m pip install build
+          python -m build
+      - name: Install and verify the built wheel outside the checkout
+        if: steps.version.outputs.exists == 'false'
+        shell: bash
+        run: |
+          python -m venv "$RUNNER_TEMP/kahm-wheel-check"
+          "$RUNNER_TEMP/kahm-wheel-check/bin/python" -m pip install dist/*.whl
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/kahm-wheel-check/bin/python" - <<'PY'
+          import numpy as np
+          import kahm
+          from sklearn.datasets import load_iris
+          from sklearn.pipeline import make_pipeline
+          from sklearn.preprocessing import StandardScaler
+          X, y = load_iris(return_X_y=True)
+          model = make_pipeline(StandardScaler(), kahm.KAHMClassifier(subspace_dim=2))
+          model.fit(X, y)
+          scores = model.predict_proba(X[:7])
+          assert model.predict(X[:7]).shape == (7,)
+          assert scores.shape == (7, 3)
+          assert np.isfinite(scores).all()
+          np.testing.assert_allclose(scores.sum(axis=1), 1.0, atol=1e-6)
+          print('Installed wheel verified:', kahm.__version__, kahm.__file__)
+          PY
+      - name: Create release checksums
+        if: steps.version.outputs.exists == 'false'
+        shell: bash
+        run: |
+          cd dist
+          sha256sum *.whl *.tar.gz > SHA256SUMS
+      - name: Publish the versioned research preview
+        if: steps.version.outputs.exists == 'false'
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        shell: bash
+        run: |
+          test -f "docs/releases/$RELEASE_TAG.md"
+          gh release create "$RELEASE_TAG" dist/*.whl dist/*.tar.gz dist/SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "KAHM $RELEASE_TAG — classification research preview" \
+            --notes-file "docs/releases/$RELEASE_TAG.md" \
+            --prerelease
