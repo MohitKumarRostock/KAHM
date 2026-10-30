@@ -18,6 +18,7 @@ The example reports every method, including when a baseline performs better.
 | [Recorded results](examples/results/digits/report.md) | Measured scores, costs, selected settings, and limitations |
 | [Evaluation protocol](examples/PROTOCOL.md) | The split, grids, and metrics specified before the first run |
 | [Classifier guide](docs/CLASSIFICATION.md) | Parameters, numerical conventions, and legacy compatibility |
+| [Time-series research](https://github.com/MohitKumarRostock/Kernel_Affine_Hull_Koopman_Machine/tree/research/kahm-forecasting-utility/extensions/forecasting_utility) | Preserved raw forecasts, optional KAHM corrections, matched controls, and measured accuracy–cost tradeoffs |
 | [Research and citation](#research-and-citation) | Original method and related implementations |
 
 ## Installation
@@ -114,6 +115,21 @@ The example evaluates class predictions, without probability-quality claims.
 
 See [the changelog](CHANGELOG.md) for the numerical repairs in this version and
 [the classifier guide](docs/CLASSIFICATION.md) for limitations.
+
+## KAHM for time-series research
+
+The companion [forecasting-utility study](https://github.com/MohitKumarRostock/Kernel_Affine_Hull_Koopman_Machine/tree/research/kahm-forecasting-utility/extensions/forecasting_utility)
+asks when KAHM features help a finite forecasting procedure and whether their
+additional cost is justified. It preserves a raw-history predictor and tests
+an optional residual correction against matched affine and locality features.
+The study separates training data from decoder capacity, retains unfavorable
+comparisons, and provides saved predictions and an independent audit.
+
+The forecasting implementation, small chronological example, execution
+protocol, and revised unsubmitted manuscript live in that research repository.
+This repository remains the installable classification entry point. Both
+projects use the KAHM name for the underlying geometric method while stating
+the evidence and limitations of each application.
 
 ## Research and citation
 
